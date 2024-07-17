@@ -1,2 +1,2 @@
 # Youtube-Downloader
-This repository containing streamlit youtube downloader
+This repository contains youtube downloader based on streamlit 
