@@ -1,8 +1,9 @@
-import yt_dlp
-import streamlit as st
-import zipfile
 import os
+import time
+import yt_dlp
+import zipfile
 from PIL import Image
+import streamlit as st
 
 
 im = Image.open("favicon.ico")
@@ -13,47 +14,50 @@ def download_video(url, download_type):
     downloaded_files = []
 
     if download_type == 'Video':
-        ydl_opts = {'format': 'bestvideo[height<=1080]+bestaudio', 
+        ydl_opts = {'format': 'best[height<=1080]', 
                     'outtmpl': '%(title)s.%(ext)s',
-                    'postprocessors': [{
-                        'key': 'FFmpegVideoConvertor',
-                        'preferedformat': 'webm',
-                    }],
+                    # 'postprocessors': [{
+                    #     'key': 'FFmpegVideoConvertor',
+                    #     'preferedformat': 'webm',
+                    # }],
         }
     elif download_type == 'Audio':
-        ydl_opts = {'format': 'bestaudio', 'outtmpl': '%(title)s.%(ext)s', 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]}
+        ydl_opts = {'format': 'bestaudio', 'outtmpl': '%(title)s.%(ext)s'}
     elif download_type == 'Playlist':
         ydl_opts = {
             'yes_playlist': True,
             'format': 'bestaudio',
-            'outtmpl': '%(title)s.%(ext)s',
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
+            'outtmpl': '%(title)s.%(ext)s'
         }
 
     # Initialize Streamlit progress bar and status text
     progress_bar = st.progress(0)
     status_text = st.empty()
     downloaded_bytes = 0
+    video_count = 0
+    all_video_count = 1
 
     # Inner function to handle the progress bar
     def progress_hook(d):
         nonlocal downloaded_bytes
-        if d['status'] == 'downloading':
-            downloaded_bytes += d['downloaded_bytes'] - downloaded_bytes
-            progress = downloaded_bytes / total_size
+        nonlocal video_count, all_video_count
+        if d['status'] == 'finished':
+            video_count += 1
+            progress = video_count / all_video_count
             progress_bar.progress(progress)
-            status_text.text(f"Convertion {downloaded_bytes} of {total_size} bytes")
-        elif d['status'] == 'finished':
+            status_text.text(f"Downloaded videos {video_count} from {all_video_count}")
+            if video_count == all_video_count:
+                status_text.text(f"Download Completed")
             downloaded_files.append(d['filename'])
-            progress_bar.progress(1.0)
-            status_text.text(f"Convertion Completed")
 
     ydl_opts['progress_hooks'] = [progress_hook]
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        with st.spinner(text=f"Converting {download_type}"):
+        with st.spinner(text=f"Getting {download_type}"):
             info_dict = ydl.extract_info(url, download=False)
-        total_size = info_dict.get('filesize', 0) or info_dict.get('filesize_approx', 0) or sum([entry.get('filesize', 0) for entry in info_dict.get('entries', [])])
+        all_video_count = len(info_dict.get("entries", [0]))
+        status_text.text(f"Downloaded {video_count} from {all_video_count}")
+        # total_size = info_dict.get('filesize', 0) or info_dict.get('filesize_approx', 0) or sum([entry.get('filesize', 0) for entry in info_dict.get('entries', [])])
         ydl.download([url])
     if download_type == "Playlist":
         zip_file_name = info_dict.get("title", "downloaded_zip")
@@ -63,20 +67,18 @@ def download_video(url, download_type):
         download_file_name = os.path.join("Zips", zip_file_name)
         with zipfile.ZipFile(download_file_name, 'w') as zipf:
             for file in downloaded_files:
-                if download_type == 'Audio' or download_type == 'Playlist':
-                    file = file.replace(".webm", ".mp3")
                 zipf.write(file, file)
                 os.remove(file)
     elif download_type == "Audio":
         os.makedirs("Audios", exist_ok=True)
         file = downloaded_files[0]
-        file = file.replace(".webm", ".mp3")
+        st.write("Audio name:", file)
         download_file_name = os.path.join("Audios", file)
         os.rename(file, download_file_name)
     elif download_type == "Video":
         os.makedirs("Videos", exist_ok=True)
         file = downloaded_files[0]
-        file = file.split('.webm')[0][:-5] + '.webm'
+        st.write("Video name:", file)
         download_file_name = os.path.join("Videos", file)
         os.rename(file, download_file_name)
     return download_file_name
@@ -87,14 +89,14 @@ def main():
     
     url = st.text_input("Enter YouTube URL")
     download_type = st.selectbox("Select download type", ["Video", "Audio", "Playlist"])
-    if st.button("Convert"):
+    if st.button(f"Get {download_type}"):
         if ("&list" in url or "?list" in url) and download_type != "Playlist":
             st.write(f"Provided Playlist URL, but download_type is set to '{download_type}'. If you want to download entire playlist, please change download_type to 'Playlist'")
         else:
             download_file_name = download_video(url, download_type)
             with open(download_file_name, 'rb') as file:
                 st.download_button(
-                    label=f"Download {download_type}",
+                    label=f"Save {download_type} To Computer",
                     data=file,
                     file_name=os.path.basename(download_file_name),
                     mime='application/octet-stream'
